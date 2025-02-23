@@ -1,46 +1,153 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { Text, View, TextInput, FlatList, StyleSheet, TouchableOpacity, Platform, Animated, StatusBar } from 'react-native';
 import { useFonts } from 'expo-font';
-import { Inter_700Bold } from '@expo-google-fonts/inter';
+import { 
+  Poppins_400Regular,
+  Poppins_600SemiBold 
+} from '@expo-google-fonts/poppins';
+import { DellaRespira_400Regular } from '@expo-google-fonts/della-respira';
 import * as Haptics from 'expo-haptics';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Feather } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+// Add this near the top of the file, after imports
+interface Tag {
+  text: string;
+  color: string;
+}
+
+// Add this helper function after the Tag interface and before the component
+const levenshteinDistance = (str1: string, str2: string): number => {
+  const track = Array(str2.length + 1).fill(null).map(() =>
+    Array(str1.length + 1).fill(null));
+  for (let i = 0; i <= str1.length; i += 1) {
+    track[0][i] = i;
+  }
+  for (let j = 0; j <= str2.length; j += 1) {
+    track[j][0] = j;
+  }
+  for (let j = 1; j <= str2.length; j += 1) {
+    for (let i = 1; i <= str1.length; i += 1) {
+      const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+      track[j][i] = Math.min(
+        track[j][i - 1] + 1,
+        track[j - 1][i] + 1,
+        track[j - 1][i - 1] + indicator,
+      );
+    }
+  }
+  return track[str2.length][str1.length];
+};
+
+// Outside component:
+const taskAnimatedValues = new Map<number, Animated.Value>();
+
+// Add this helper function after your other functions
+const isDatePast = (date: Date): boolean => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);  // Reset time to start of day
+  return date < today;
+};
+
+// Add this helper function to sort tasks
+const sortTasks = (tasks: Array<{ 
+  text: string; 
+  completed: boolean; 
+  dueDate?: Date;
+}>) => {
+  return [...tasks].sort((a, b) => {
+    // First sort by completion status
+    if (a.completed !== b.completed) {
+      return a.completed ? -1 : 1;
+    }
+    
+    // If neither task has a due date
+    if (!a.dueDate && !b.dueDate) {
+      return 0;
+    }
+    
+    // Put tasks without due dates at the bottom
+    if (!a.dueDate) return 1;
+    if (!b.dueDate) return -1;
+    
+    // Sort by date (earliest first) for uncompleted tasks
+    return a.dueDate.getTime() - b.dueDate.getTime();
+  });
+};
 
 export default function App() {
+  // 1. Font loading hook
+  const [fontsLoaded] = useFonts({
+    'Poppins-Regular': Poppins_400Regular,
+    'Poppins-SemiBold': Poppins_600SemiBold,
+    'DellaRespira': DellaRespira_400Regular,
+  });
+
+  // 2. All useState hooks
   const [task, setTask] = useState("");
-  const [tasks, setTasks] = useState<Array<{ text: string; completed: boolean }>>([]);
+  const [tasks, setTasks] = useState<Array<{ 
+    text: string; 
+    completed: boolean;
+    dueDate?: Date;
+  }>>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
   const [showInput, setShowInput] = useState(false);
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
   const [swipedIndex, setSwipedIndex] = useState<number | null>(null);
   const [isTrashVisible, setIsTrashVisible] = useState(false);
-  const [taskAnimatedValues] = useState(() => 
-    new Map<number, Animated.Value>()
-  );
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+  const [currentTagText, setCurrentTagText] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedTaskIndex, setSelectedTaskIndex] = useState<number | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [suggestedDate, setSuggestedDate] = useState<Date | null>(null);
+  const [showDateSuggestion, setShowDateSuggestion] = useState(false);
+  const [highlightedText, setHighlightedText] = useState('');
 
-  // Create a refs object to store Swipeable refs per item.
+  // 3. All useRef hooks
+  const inputRef = useRef<TextInput>(null);
+  const lastCursorPosition = useRef<number>(0);
   const swipeableRefs = useRef<{ [key: number]: Swipeable | null }>({});
 
-  const [fontsLoaded] = useFonts({
-    'Inter-Bold': Inter_700Bold,
-  });
-
-  if (!fontsLoaded) {
-    return null;
-  }
-
+  // 4. All useCallback hooks
   const getTaskAnimatedValue = useCallback((index: number) => {
     if (!taskAnimatedValues.has(index)) {
       taskAnimatedValues.set(index, new Animated.Value(0));
     }
     return taskAnimatedValues.get(index)!;
-  }, [taskAnimatedValues]);
+  }, []);
+
+  // 5. All useMemo hooks
+  const filteredTags = useMemo(() => {
+    if (!currentTagText) return tags;
+    return tags
+      .filter(tag => tag.text.toLowerCase().includes(currentTagText.toLowerCase()))
+      .sort((a, b) => {
+        const aSimilarity = levenshteinDistance(currentTagText, a.text);
+        const bSimilarity = levenshteinDistance(currentTagText, b.text);
+        return aSimilarity - bSimilarity;
+      });
+  }, [currentTagText, tags]);
+
+  // Early return for font loading
+  if (!fontsLoaded) {
+    return null;
+  }
 
   const addTask = () => {
     if (task.trim()) {
-      setTasks([...tasks, { text: task, completed: false }]);
+      const newTasks = [...tasks, { 
+        text: task, 
+        completed: false,
+        dueDate: suggestedDate || undefined
+      }];
+      setTasks(sortTasks(newTasks));
       setTask("");
+      setShowDateSuggestion(false);
+      setSuggestedDate(null);
     }
   };
 
@@ -56,10 +163,7 @@ export default function App() {
     }).start(() => {
       // Reset animation value and update task order
       getTaskAnimatedValue(index).setValue(0);
-      setTasks([
-        ...newTasks.filter(task => task.completed),
-        ...newTasks.filter(task => !task.completed)
-      ]);
+      setTasks(sortTasks(newTasks));
     });
   };
 
@@ -78,28 +182,9 @@ export default function App() {
   };
 
   const handleDelete = (index: number) => {
-    // First close any open swipeable
-    if (swipedIndex !== null) {
-      swipeableRefs.current[swipedIndex]?.close();
-    }
-
-    // Reset all states
-    setDeleteConfirmIndex(null);
-    setSwipedIndex(null);
-    
-    // Update tasks with animation
     const newTasks = tasks.filter((_, i) => i !== index);
     setTasks(newTasks);
-    
-    // Reset refs and clean up the deleted ref
-    Object.keys(swipeableRefs.current).forEach((key) => {
-      const keyNum = parseInt(key);
-      if (keyNum > index) {
-        // Move the ref to the new index
-        swipeableRefs.current[keyNum - 1] = swipeableRefs.current[keyNum];
-      }
-    });
-    delete swipeableRefs.current[index];
+    setDeleteConfirmIndex(null);
   };
 
   const onScroll = (event: any) => {
@@ -116,10 +201,6 @@ export default function App() {
 
   const handleCancel = () => {
     setDeleteConfirmIndex(null);
-    if (swipedIndex !== null) {
-      swipeableRefs.current[swipedIndex]?.reset();
-    }
-    setSwipedIndex(null);
   };
 
   const renderRightActions = (
@@ -165,23 +246,90 @@ export default function App() {
     );
   };
 
+  const handleDateChange = (event: any, date?: Date) => {
+    if (event.type === 'set' && date && selectedTaskIndex !== null) {
+      const newTasks = [...tasks];
+      newTasks[selectedTaskIndex].dueDate = date;
+      setTasks(sortTasks(newTasks));
+    }
+    setShowDatePicker(false);
+    setSelectedTaskIndex(null);
+  };
+
+  const handleTaskLongPress = (index: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedTaskIndex(index);
+    setSelectedDate(tasks[index].dueDate || new Date());
+    setShowDatePicker(true);
+  };
+
+  const checkForDateKeywords = (text: string) => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Check for tomorrow keywords
+    const tomorrowKeywords = ['tomorrow', 'tmrw', 'tmwr'];
+    const foundTomorrow = tomorrowKeywords.find(keyword => 
+      text.toLowerCase().includes(keyword)
+    );
+
+    // Check for today keywords
+    const todayKeywords = ['today', 'tdy', 'td'];
+    const foundToday = todayKeywords.find(keyword => 
+      text.toLowerCase().includes(keyword)
+    );
+
+    if (foundTomorrow) {
+      setSuggestedDate(tomorrow);
+    } else if (foundToday) {
+      setSuggestedDate(today);
+    } else {
+      setSuggestedDate(null);
+    }
+  };
+
+  const handleTextChange = (text: string) => {
+    setTask(text);
+    checkForDateKeywords(text);
+  };
+
+  const handleDateSuggestionSelect = () => {
+    if (suggestedDate) {
+      const newTasks = [...tasks, { 
+        text: task, 
+        completed: false,
+        dueDate: suggestedDate
+      }];
+      setTasks(sortTasks(newTasks));
+      setTask("");
+      setShowDateSuggestion(false);
+      setSuggestedDate(null);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
       {showInput && (
-        <TextInput
-          style={styles.input}
-          placeholder="Add new task"
-          placeholderTextColor="#808080"
-          value={task}
-          onChangeText={setTask}
-          returnKeyType="done"
-          onSubmitEditing={() => {
-            addTask();
-            setShowInput(false);
-          }}
-          autoFocus
-        />
+        <View>
+          <TextInput
+            style={styles.input}
+            value={task}
+            onChangeText={handleTextChange}
+            placeholder="Add new task"
+            placeholderTextColor="#808080"
+            returnKeyType="done"
+            onSubmitEditing={() => {
+              addTask();
+              setShowInput(false);
+            }}
+            autoFocus
+          />
+        </View>
       )}
       <FlatList
         data={tasks}
@@ -199,31 +347,15 @@ export default function App() {
             friction={2}
             overshootRight={false}
             onSwipeableWillOpen={() => {
-              // Close any other open swipeables first
               if (swipedIndex !== null && swipedIndex !== index) {
                 swipeableRefs.current[swipedIndex]?.close();
               }
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             }}
-            onSwipeableRightOpen={() => {
-              setSwipedIndex(index);
-            }}
-            onSwipeableClose={() => {
-              setSwipedIndex(null);
-            }}
+            onSwipeableRightOpen={() => setSwipedIndex(index)}
+            onSwipeableClose={() => setSwipedIndex(null)}
           >
-            <Animated.View style={[
-              styles.taskContainer,
-              {
-                opacity: 1,
-                transform: [{
-                  translateY: getTaskAnimatedValue(index).interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -index * 44], // 44 is approximate height of task
-                  })
-                }]
-              }
-            ]}>
+            <View style={styles.taskContainer}>
               <TouchableOpacity
                 style={[
                   styles.checkButton,
@@ -234,29 +366,41 @@ export default function App() {
                 {item.completed && <Text style={styles.checkMark}>✓</Text>}
               </TouchableOpacity>
               
-              {editingIndex === index ? (
-                <TextInput
-                  style={[styles.task, styles.editInput]}
-                  value={editingText}
-                  onChangeText={setEditingText}
-                  onBlur={() => saveEdit(index)}
-                  onSubmitEditing={() => saveEdit(index)}
-                  autoFocus
-                />
-              ) : (
-                <TouchableOpacity
-                  onPress={() => !item.completed && startEditing(index, item.text)}
-                  style={styles.taskTextContainer}
-                >
+              <TouchableOpacity
+                onPress={() => !item.completed && startEditing(index, item.text)}
+                onLongPress={() => handleTaskLongPress(index)}
+                style={styles.taskTextContainer}
+              >
+                <View style={styles.taskContent}>
                   <Text style={[
                     styles.task,
-                    item.completed && styles.completedTask
+                    item.completed && styles.completedTask,
+                    item.dueDate && isDatePast(item.dueDate) && styles.pastDueTask
                   ]}>
                     {item.text}
                   </Text>
-                </TouchableOpacity>
-              )}
-            </Animated.View>
+                  {item.dueDate && (
+                    <Text style={[
+                      styles.dateText,
+                      item.completed && styles.completedTask,
+                      isDatePast(item.dueDate) && styles.pastDueTask
+                    ]}>
+                      {item.dueDate.toLocaleDateString()}
+                    </Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuButton}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setDeleteConfirmIndex(index);
+                }}
+              >
+                <Feather name="more-horizontal" size={24} color="#2F2F2F" />
+              </TouchableOpacity>
+            </View>
           </Swipeable>
         )}
         keyExtractor={(_item, index) => index.toString()}
@@ -286,6 +430,35 @@ export default function App() {
           </View>
         </View>
       )}
+
+      {showDatePicker && (
+        <TouchableOpacity 
+          style={styles.datePickerOverlay}
+          activeOpacity={1}
+          onPress={() => {
+            setShowDatePicker(false);
+            setSelectedTaskIndex(null);
+          }}
+        >
+          <TouchableOpacity 
+            activeOpacity={1} 
+            onPress={(e) => e.stopPropagation()}
+            style={styles.datePickerContainer}
+          >
+            <Text style={styles.datePickerTitle}>Add date</Text>
+            <DateTimePicker
+              value={selectedDate || new Date()}
+              mode="date"
+              display="inline"
+              onChange={handleDateChange}
+              style={styles.datePicker}
+              textColor="black"
+              accentColor="#5D9CEC"
+              themeVariant="light"
+            />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -305,11 +478,12 @@ const styles = StyleSheet.create({
     marginTop: 60,
     backgroundColor: "#F7F5F2",
     fontSize: 24,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Poppins-SemiBold',
     position: 'absolute',
     left: 0,
     right: 0,
     zIndex: 1,
+    color: '#2F2F2F',
   },
   taskContainer: {
     flexDirection: "row",
@@ -320,8 +494,9 @@ const styles = StyleSheet.create({
   task: {
     fontSize: 18,
     padding: 5,
-    color: "#000000",
+    color: "#2F2F2F",
     flex: 1,
+    fontFamily: 'Poppins-Regular',
   },
   completedTask: {
     textDecorationLine: 'line-through',
@@ -331,13 +506,13 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderWidth: 2,
-    borderColor: '#808080',
+    borderColor: '#2F2F2F',
     borderRadius: 4,
     justifyContent: 'center',
     alignItems: 'center',
   },
   checkButtonCompleted: {
-    backgroundColor: '#808080',
+    backgroundColor: '#2F2F2F',
   },
   checkMark: {
     color: '#F7F5F2',
@@ -348,8 +523,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
   },
   editInput: {
-    padding: 0,
-    margin: 0,
+    padding: 5,
+    marginLeft: 10,
+    fontSize: 18,
+    flex: 1,
   },
   deleteSwipeButton: {
     justifyContent: 'center',
@@ -382,8 +559,9 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 18,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Poppins-SemiBold',
     marginBottom: 20,
+    color: '#2F2F2F',
   },
   modalButtons: {
     flexDirection: 'row',
@@ -402,14 +580,14 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     color: '#666666',
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Poppins-Regular',
   },
   deleteButton: {
     backgroundColor: '#FFE5E5',
   },
   deleteButtonText: {
     color: '#FF4040',
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Poppins-Regular',
   },
   rightActions: {
     width: 60,
@@ -424,4 +602,59 @@ const styles = StyleSheet.create({
     width: 40,
     height: 50,
   },
+  datePickerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  datePickerContainer: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+    width: '90%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  datePickerTitle: {
+    fontSize: 18,
+    fontFamily: 'Poppins-SemiBold',
+    marginBottom: 20,
+    color: '#2F2F2F',
+  },
+  datePicker: {
+    width: 320,
+    height: 400,
+    backgroundColor: 'white',
+  },
+  taskContent: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dateText: {
+    fontSize: 14,
+    color: '#808080',
+    marginLeft: 10,
+    fontFamily: 'Poppins-Regular',
+  },
+  pastDueTask: {
+    color: '#FF7070',  // Lighter, more subtle red color
+  },
+  highlightedText: {
+    color: '#4682B4',  // Steel blue color
+  },
+  menuButton: {
+    padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });
+
