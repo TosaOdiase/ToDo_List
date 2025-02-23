@@ -1,50 +1,92 @@
-# Welcome to your Expo app 👋
+TodoApp
+A simple To-Do List mobile application built with React Native and Expo. This app demonstrates task management features such as adding, editing, completing, and deleting tasks—all with smooth animations and haptic feedback for an enhanced user experience.
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Features
+Task Management:
 
-## Get started
+Add new tasks dynamically.
+Mark tasks as completed with a simple tap.
+Edit task text by tapping on an incomplete task.
+Delete tasks via a swipe gesture with a confirmation modal.
+Smooth Animations:
 
-1. Install dependencies
+Utilizes React Native's Animated API to transition tasks when toggled.
+Rearranges tasks with a neat animation effect.
+Haptic Feedback:
 
-   ```bash
-   npm install
-   ```
+Provides tactile responses using Expo Haptics, enhancing the interactive experience.
+Custom Fonts:
 
-2. Start the app
+Loads the Inter font from Google Fonts via Expo for a modern look.
+Cross-Platform:
 
-   ```bash
-    npx expo start
-   ```
+Designed to work seamlessly on both iOS and Android devices.
+Installation
+Prerequisites
+Node.js (LTS version recommended)
+Expo CLI installed globally
+bash
+Copy
+npm install -g expo-cli
+A package manager such as npm or yarn
+Setup
+Clone the Repository:
 
-In the output, you'll find options to open the app in a
+bash
+Copy
+git clone https://github.com/your-username/todoapp.git
+cd todoapp
+Install Dependencies:
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+Using npm:
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+bash
+Copy
+npm install
+Or using yarn:
 
-## Get a fresh project
+bash
+Copy
+yarn install
+Start the Application:
 
-When you're ready, run:
+bash
+Copy
+expo start
+Follow the instructions in the terminal to run the app on an emulator or a physical device.
 
-```bash
-npm run reset-project
-```
+Code Overview
+The main application logic is contained in the App.js file. Key aspects include:
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+State Management & Hooks:
+Uses React's useState and useCallback hooks to manage tasks, editing state, and animated values.
 
-## Learn more
+Task Animations:
+Implements smooth transitions using React Native's Animated API. Each task is animated when toggled between completed and active states.
 
-To learn more about developing your project with Expo, look at the following resources:
+Swipeable Actions:
+Integrates react-native-gesture-handler’s Swipeable component to allow swipe-to-delete functionality. Users receive haptic feedback when interacting with tasks.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Custom Fonts & Styling:
+Loads custom fonts using Expo's useFonts hook, and styles are defined using React Native's StyleSheet for a consistent design.
 
-## Join the community
+Platform-Specific Feedback:
+Provides haptic feedback tailored for iOS (and available on Android) using Expo Haptics.
 
-Join our community of developers creating universal apps.
+Contributing
+Contributions, issues, and feature requests are welcome! Feel free to check issues page if you want to contribute.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Fork the repository.
+Create your feature branch (git checkout -b feature/YourFeature).
+Commit your changes (git commit -m 'Add some feature').
+Push to the branch (git push origin feature/YourFeature).
+Open a pull request.
+License
+Distributed under the MIT License. See the LICENSE file for details.
+
+Acknowledgements
+Expo
+React Native
+React Native Gesture Handler
+Feather Icons
+Google Fonts
